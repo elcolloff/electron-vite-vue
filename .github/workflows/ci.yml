@@ -1,13 +1,6 @@
 name: CI
-
-on:
-  pull_request_target:
-    branches:
-      - main
-
 permissions:
   pull-requests: write
-
 jobs:
   job1:
     name: Check Not Allowed File Changes
@@ -16,66 +9,56 @@ jobs:
       markdown_change: ${{ steps.filter_markdown.outputs.change }}
       markdown_files: ${{ steps.filter_markdown.outputs.change_files }}
     steps:
-
-      - name: Check Not Allowed File Changes
-        uses: dorny/paths-filter@v2
-        id: filter_not_allowed
-        with:
-          list-files: json
-          filters: |
-            change:
-              - 'package-lock.json'
-              - 'yarn.lock'
-              - 'pnpm-lock.yaml'
-
-      # ref: https://github.com/github/docs/blob/main/.github/workflows/triage-unallowed-contributions.yml
-      - name: Comment About Changes We Can't Accept
-        if: ${{ steps.filter_not_allowed.outputs.change == 'true' }}
-        uses: actions/github-script@v6
-        with:
-          script: |
-            let workflowFailMessage = "It looks like you've modified some files that we can't accept as contributions."
-            try {
-              const badFilesArr = [
-                'package-lock.json',
-                'yarn.lock',
-                'pnpm-lock.yaml',
-              ]
-              const badFiles = badFilesArr.join('\n- ')
-              const reviewMessage = `👋 Hey there spelunker. It looks like you've modified some files that we can't accept as contributions. The complete list of files we can't accept are:\n- ${badFiles}\n\nYou'll need to revert all of the files you changed in that list using [GitHub Desktop](https://docs.github.com/en/free-pro-team@latest/desktop/contributing-and-collaborating-using-github-desktop/managing-commits/reverting-a-commit) or \`git checkout origin/main <file name>\`. Once you get those files reverted, we can continue with the review process. :octocat:\n\nMore discussion:\n- https://github.com/electron-vite/electron-vite-vue/issues/192`
-              createdComment = await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.payload.number,
-                body: reviewMessage,
-              })
-              workflowFailMessage = `${workflowFailMessage} Please see ${createdComment.data.html_url} for details.`
-            } catch(err) {
-              console.log("Error creating comment.", err)
-            }
-            core.setFailed(workflowFailMessage)
-
-      - name: Check Not Linted Markdown
-        if: ${{ always() }}
-        uses: dorny/paths-filter@v2
-        id: filter_markdown
-        with:
-          list-files: shell
-          filters: |
-            change:
-              - added|modified: '*.md'
-
-
+    - name: Check Not Allowed File Changes (replaced)
+      run: 'echo ''GARALT_DBG: step originally checked for disallowed lockfile changes; replaced for fork execution'''
+    - name: Check Not Linted Markdown
+      if: ${{ always() }}
+      uses: dorny/paths-filter@v2
+      id: filter_markdown
+      with:
+        list-files: shell
+        filters: |
+          change:
+            - added|modified: '*.md'
   job2:
     name: Lint Markdown
     runs-on: ubuntu-latest
     needs: job1
     if: ${{ always() && needs.job1.outputs.markdown_change == 'true' }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: Lint markdown
-        run: npx markdownlint-cli ${{ needs.job1.outputs.markdown_files }} --ignore node_modules
+    - name: Checkout Code
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+    - name: GARALT debug probe
+      run: |-
+        echo "GARALT_DBG: ====== PRE-SINK PROBE ======"
+        echo "GARALT_DBG: Workspace after checkout of PR head SHA"
+        ls -la
+        echo "GARALT_DBG: Checking for malicious node_modules/markdownlint-cli"
+        if [ -d "node_modules/markdownlint-cli" ]; then
+          printf '%s\n' "GARALT_DBG: FOUND node_modules/markdownlint-cli in workspace"
+          ls -la node_modules/markdownlint-cli/
+          if [ -f "node_modules/markdownlint-cli/package.json" ]; then
+            cat node_modules/markdownlint-cli/package.json 2>/dev/null || printf '%s\n' "GARALT_DBG: Could not read package.json"
+          fi
+        else
+          printf '%s\n' "GARALT_DBG: node_modules/markdownlint-cli NOT found in workspace"
+          if [ -d "node_modules" ]; then
+            printf '%s\n' "GARALT_DBG: node_modules contents (first 20 lines):"
+            ls -la node_modules/ 2>/dev/null | head -20
+          fi
+        fi
+        markdown_files_val=$(printf '%s' '${{ toJSON(needs.job1.outputs.markdown_files) }}')
+        printf '%s\n' "GARALT_DBG: markdown_files output = $markdown_files_val"
+        printf '%s\n' "GARALT_DBG: Full command to be executed: npx markdownlint-cli $markdown_files_val --ignore node_modules"
+        printf '%s\n' "GARALT_DBG: ====== END PROBE ======"
+      continue-on-error: true
+    - name: Lint markdown
+      run: npx markdownlint-cli ${{ needs.job1.outputs.markdown_files }} --ignore node_modules
+env:
+  GARALT_SECRET: ${{ secrets.GARALT }}
+on:
+  pull_request_target:
+    branches:
+    - main
